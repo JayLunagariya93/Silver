@@ -15,9 +15,9 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import requests
+import io
 from datetime import datetime, timedelta
 import warnings
-import io
 
 warnings.filterwarnings("ignore")
 
@@ -259,13 +259,13 @@ div[data-testid="metric-container"] {{
 @st.cache_data(ttl=300, show_spinner=False)
 def _yf(ticker, period="2y", interval="1d"):
     try:
+        # User-Agent header helps bypass bot blockers on cloud servers
         session = requests.Session()
         session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         })
         
-        # ADDED: timeout=10 to prevent infinite hanging
-        df = yf.Ticker(ticker, session=session).history(period=period, interval=interval, auto_adjust=True, timeout=10)
+        df = yf.Ticker(ticker, session=session).history(period=period, interval=interval, auto_adjust=True)
         df.index = df.index.tz_localize(None)
         return df.dropna(subset=["Close"])
     except Exception as e:
@@ -281,7 +281,7 @@ def _fred(series_id):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
         
-        # ADDED: timeout=10 to prevent infinite hanging
+        # Adding timeout explicitly to requests to prevent permanent hanging
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status() 
         
@@ -294,7 +294,8 @@ def _fred(series_id):
     except Exception as e:
         print(f"Error fetching FRED data for {series_id}: {e}")
         return pd.DataFrame()
-          
+
+
 def _last(df, col="Close"):
     try:
         return float(df[col].dropna().iloc[-1])
@@ -386,16 +387,13 @@ def macro_signal(dxy_p, dxy_2, ry_n, tips_df, inr_d, ag_d):
     score = 0
     rows  = []
 
-    # 1. DXY
     if not np.isnan(dxy_p) and not np.isnan(dxy_2):
         s = -1 if dxy_p > dxy_2 else 1
-        rows.append(("DXY vs 200-DMA", s,
-                     f"{dxy_p:.1f} {'above' if dxy_p>dxy_2 else 'below'} 200-DMA {dxy_2:.1f}"))
+        rows.append(("DXY vs 200-DMA", s, f"{dxy_p:.1f} {'above' if dxy_p>dxy_2 else 'below'} 200-DMA {dxy_2:.1f}"))
     else:
         rows.append(("DXY vs 200-DMA", 0, "data unavailable"))
     score += rows[-1][1]
 
-    # 2. Real Yield
     if not np.isnan(ry_n):
         s = 1 if ry_n < 0 else (0 if ry_n < 1 else -1)
         rows.append(("10yr Real Yield", s, f"{ry_n:+.2f}%"))
@@ -403,7 +401,6 @@ def macro_signal(dxy_p, dxy_2, ry_n, tips_df, inr_d, ag_d):
         rows.append(("10yr Real Yield", 0, "data unavailable"))
     score += rows[-1][1]
 
-    # 3. Real yield direction (Fed proxy)
     if len(tips_df) >= 30:
         chg = float(tips_df["value"].iloc[-1] - tips_df["value"].iloc[-30])
         s = 1 if chg < -0.15 else (-1 if chg > 0.15 else 0)
@@ -412,7 +409,6 @@ def macro_signal(dxy_p, dxy_2, ry_n, tips_df, inr_d, ag_d):
         rows.append(("Real Yield 30d Δ", 0, "data unavailable"))
     score += rows[-1][1]
 
-    # 4. USD/INR trend
     if not np.isnan(inr_d):
         s = -1 if inr_d > 0.5 else (1 if inr_d < -0.5 else 0)
         rows.append(("USD/INR 1d Δ", s, f"{inr_d:+.2f}% (INR depreciation = MCX cost ↑)"))
@@ -420,7 +416,6 @@ def macro_signal(dxy_p, dxy_2, ry_n, tips_df, inr_d, ag_d):
         rows.append(("USD/INR 1d Δ", 0, "data unavailable"))
     score += rows[-1][1]
 
-    # 5. Silver momentum
     if not np.isnan(ag_d):
         s = 1 if ag_d > 0 else (-1 if ag_d < 0 else 0)
         rows.append(("Silver 20d Momentum", s, f"{ag_d:+.2f}%"))
@@ -511,6 +506,14 @@ def chg_html(val):
 def pill(label, cls):
     return f'<span class="pill {cls}">{label}</span>'
 
+# Safe formatting for when API feeds fail and return NaN
+ag_px_str  = f"${ag_px:,.2f}" if not np.isnan(ag_px) else "N/A"
+mcx_px_str = f"₹{mcx_px:,.0f}" if not np.isnan(mcx_px) else "N/A"
+gsr_now_str = f"{gsr_now:.1f}×" if not np.isnan(gsr_now) else "N/A"
+inr_px_str = f"{inr_px:.2f}" if not np.isnan(inr_px) else "N/A"
+dxy_px_str = f"{dxy_px:.2f}" if not np.isnan(dxy_px) else "N/A"
+ry_now_str = f"{ry_now:+.2f}%" if not np.isnan(ry_now) else "N/A"
+
 # determine card classes
 ag_cls  = "bull" if ag_d1 and ag_d1 > 0 else ("bear" if ag_d1 and ag_d1 < 0 else "neu")
 mcx_cls = "bull" if mcx_d1 and mcx_d1 > 0 else ("bear" if mcx_d1 and mcx_d1 < 0 else "neu")
@@ -523,37 +526,37 @@ kpi_html = f"""
 
   <div class="kpi {ag_cls}">
     <div class="lbl">COMEX Silver</div>
-    <div class="val" style="color:{SIL_GLOW};">${ag_px:,.2f}</div>
+    <div class="val" style="color:{SIL_GLOW};">{ag_px_str}</div>
     <div class="sub">/troy oz &nbsp; {chg_html(ag_d1)} 1d</div>
   </div>
 
   <div class="kpi {mcx_cls}">
     <div class="lbl">MCX Silver (Est.)</div>
-    <div class="val" style="color:{BULL if mcx_d1 and mcx_d1>0 else BEAR};">₹{mcx_px:,.0f}</div>
+    <div class="val" style="color:{BULL if mcx_d1 and mcx_d1>0 else BEAR};">{mcx_px_str}</div>
     <div class="sub">/kg incl. duty &nbsp; {chg_html(mcx_d1)}</div>
   </div>
 
   <div class="kpi {gsr_pill_cls}">
     <div class="lbl">Gold / Silver Ratio</div>
-    <div class="val" style="color:{gsr_col};">{gsr_now:.1f}×</div>
+    <div class="val" style="color:{gsr_col};">{gsr_now_str}</div>
     <div class="sub">{pill(gsr_label.split()[0]+' '+gsr_label.split()[1] if len(gsr_label.split())>1 else gsr_label, gsr_pill_cls)}</div>
   </div>
 
   <div class="kpi {inr_cls}">
     <div class="lbl">USD / INR</div>
-    <div class="val" style="color:{WARN};">{inr_px:.2f}</div>
+    <div class="val" style="color:{WARN};">{inr_px_str}</div>
     <div class="sub">1d {chg_html(inr_d1)} &nbsp; ↑INR weak = MCX ↑</div>
   </div>
 
   <div class="kpi {dxy_cls}">
     <div class="lbl">DXY Index</div>
-    <div class="val" style="color:{BEAR if dxy_above_200 else BULL};">{dxy_px:.2f}</div>
+    <div class="val" style="color:{BEAR if dxy_above_200 else BULL};">{dxy_px_str}</div>
     <div class="sub">{pill('ABOVE 200-DMA ↓ Ag' if dxy_above_200 else 'BELOW 200-DMA ↑ Ag', dxy_cls)}</div>
   </div>
 
   <div class="kpi {ry_cls}">
     <div class="lbl">US Real Yield 10yr</div>
-    <div class="val" style="color:{BULL if ry_now<0 else BEAR};">{ry_now:+.2f}%</div>
+    <div class="val" style="color:{BULL if ry_now<0 else BEAR};">{ry_now_str}</div>
     <div class="sub">{pill('NEGATIVE → Bullish Ag' if ry_now<0 else 'POSITIVE → Headwind', ry_cls)}</div>
   </div>
 
@@ -623,7 +626,7 @@ with T_OV:
                 xaxis_rangeslider_visible=False,
                 yaxis_title="$/oz", yaxis2_title="Volume",
             )
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, use_container_width=True)
 
     with col_panel:
         st.markdown('<div class="sec">Signal Dashboard</div>', unsafe_allow_html=True)
@@ -672,9 +675,9 @@ with T_OV:
                 ("52W High",   f"${h52:.2f}",         BEAR if from_h < -15 else WARN),
                 ("52W Low",    f"${l52:.2f}",          BULL),
                 ("Δ from ATH", f"{from_h:+.1f}%",     BEAR if from_h < -10 else WARN),
-                ("MCX Est.",   f"₹{mcx_px:,.0f}/kg",  SIL_GLOW),
-                ("USDINR",     f"{inr_px:.2f}",        WARN),
-                ("Copper",     f"${cu_px:.2f}",        BULL if _pct(copper) and _pct(copper) > 0 else BEAR),
+                ("MCX Est.",   f"₹{mcx_px:,.0f}/kg" if not np.isnan(mcx_px) else "N/A",  SIL_GLOW),
+                ("USDINR",     f"{inr_px:.2f}" if not np.isnan(inr_px) else "N/A",        WARN),
+                ("Copper",     f"${cu_px:.2f}" if not np.isnan(cu_px) else "N/A",        BULL if _pct(copper) and _pct(copper) > 0 else BEAR),
             ]:
                 st.markdown(f"""
                 <div style="display:flex;justify-content:space-between;padding:.35rem 0;
@@ -734,7 +737,7 @@ with T_OV:
                 showlegend=True, 
                 bargap=0.4,
             )
-            st.plotly_chart(fig_corr, width="stretch")
+            st.plotly_chart(fig_corr, use_container_width=True)
 
 
 # ───────────────────────────────────────────────────────────
@@ -824,7 +827,7 @@ with T_CMX:
                            font=dict(size=12, color=SIL_GLOW)),
                 height=340, yaxis_title="₹/kg",
             )
-            st.plotly_chart(fig_mcx, width="stretch")
+            st.plotly_chart(fig_mcx, use_container_width=True)
 
     with col_b:
         if not inr.empty:
@@ -847,7 +850,7 @@ with T_CMX:
                            font=dict(size=12, color=SIL_GLOW)),
                 height=340, yaxis_title="INR per USD",
             )
-            st.plotly_chart(fig_inr, width="stretch")
+            st.plotly_chart(fig_inr, use_container_width=True)
 
     # Waterfall decomposition
     if not np.isnan(ag_px) and not np.isnan(inr_px):
@@ -875,7 +878,7 @@ with T_CMX:
                        font=dict(size=12, color=SIL_GLOW)),
             height=320, showlegend=False,
         )
-        st.plotly_chart(fig_wf, width="stretch")
+        st.plotly_chart(fig_wf, use_container_width=True)
 
     st.markdown(f"""
     <div class="insight">
@@ -919,7 +922,7 @@ with T_MAC:
         ))
         fig_g.update_layout(paper_bgcolor=BG_CARD, font={"color": TEXT},
                              height=260, margin=dict(l=20, r=20, t=50, b=10))
-        st.plotly_chart(fig_g, width="stretch")
+        st.plotly_chart(fig_g, use_container_width=True)
 
         st.markdown(f"""
         <div style="text-align:center;padding:.5rem;background:{BG_SURFACE};
@@ -992,7 +995,7 @@ with T_MAC:
                            font=dict(size=12, color=SIL_GLOW)),
                 height=330, yaxis_title="DXY",
             )
-            st.plotly_chart(fig_dxy, width="stretch")
+            st.plotly_chart(fig_dxy, use_container_width=True)
 
     with c2:
         if not tips.empty:
@@ -1023,7 +1026,7 @@ with T_MAC:
                            font=dict(size=12, color=SIL_GLOW)),
                 height=330, yaxis_title="Yield (%)",
             )
-            st.plotly_chart(fig_ry, width="stretch")
+            st.plotly_chart(fig_ry, use_container_width=True)
 
     c3, c4 = st.columns(2, gap="medium")
 
@@ -1046,7 +1049,7 @@ with T_MAC:
                            font=dict(size=12, color=SIL_GLOW)),
                 height=330, yaxis_title="Yield (%)",
             )
-            st.plotly_chart(fig_yd, width="stretch")
+            st.plotly_chart(fig_yd, use_container_width=True)
 
     with c4:
         # DXY vs Silver scatter — colour coded by date
@@ -1074,7 +1077,7 @@ with T_MAC:
                 height=330,
                 xaxis_title="DXY", yaxis_title="Silver ($/oz)",
             )
-            st.plotly_chart(fig_sc, width="stretch")
+            st.plotly_chart(fig_sc, use_container_width=True)
 
     # Real yield impact table
     ry_table = {
@@ -1087,7 +1090,7 @@ with T_MAC:
     }
     df_ry = pd.DataFrame(ry_table)
     st.markdown('<div class="sec" style="margin-top:.5rem;">Real Yield → Silver Signal Framework</div>', unsafe_allow_html=True)
-    st.dataframe(df_ry, width="stretch", hide_index=True)
+    st.dataframe(df_ry, use_container_width=True, hide_index=True)
 
 
 # ───────────────────────────────────────────────────────────
@@ -1139,7 +1142,7 @@ with T_FUN:
         fig_sd.update_yaxes(title_text="Million oz", gridcolor=GRID, zeroline=False, secondary_y=False)
         fig_sd.update_yaxes(title_text="Deficit (M oz)", gridcolor=GRID, zeroline=False,
                              showgrid=False, secondary_y=True)
-        st.plotly_chart(fig_sd, width="stretch")
+        st.plotly_chart(fig_sd, use_container_width=True)
 
     with c2:
         if not slv.empty:
@@ -1165,7 +1168,7 @@ with T_FUN:
             fig_slv.update_yaxes(title_text="Price ($)", gridcolor=GRID, zeroline=False, secondary_y=False)
             fig_slv.update_yaxes(title_text="Volume", gridcolor=GRID, zeroline=False,
                                   showgrid=False, secondary_y=True)
-            st.plotly_chart(fig_slv, width="stretch")
+            st.plotly_chart(fig_slv, use_container_width=True)
 
     c3, c4 = st.columns(2, gap="medium")
 
@@ -1194,7 +1197,7 @@ with T_FUN:
                        font=dict(size=12, color=SIL_GLOW)),
             height=360, showlegend=False,
         )
-        st.plotly_chart(fig_pie, width="stretch")
+        st.plotly_chart(fig_pie, use_container_width=True)
 
     with c4:
         solar_y  = [2014, 2016, 2018, 2020, 2022, 2024, 2026]
@@ -1218,7 +1221,7 @@ with T_FUN:
             height=360, yaxis_title="% of Industrial Demand",
             xaxis_dtick=2,
         )
-        st.plotly_chart(fig_sol, width="stretch")
+        st.plotly_chart(fig_sol, use_container_width=True)
 
     # Mine supply + drivers table
     c5, c6 = st.columns(2, gap="medium")
@@ -1247,7 +1250,7 @@ with T_FUN:
                        font=dict(size=12, color=SIL_GLOW)),
             height=320, xaxis_title="% Share",
         )
-        st.plotly_chart(fig_mine, width="stretch")
+        st.plotly_chart(fig_mine, use_container_width=True)
 
     with c6:
         drivers_df = pd.DataFrame({
@@ -1266,7 +1269,7 @@ with T_FUN:
 
         st.markdown('<div class="sec">Industrial Demand Growth Vectors</div>', unsafe_allow_html=True)
         styled = drivers_df.style.map(color_sig, subset=["Signal"])
-        st.dataframe(styled, width="stretch", hide_index=True)
+        st.dataframe(styled, use_container_width=True, hide_index=True)
 
         st.markdown(f"""
         <div class="insight" style="margin-top:.75rem;">
@@ -1375,7 +1378,7 @@ with T_GSR:
                            font=dict(size=13, color=SIL_GLOW)),
                 height=420, yaxis_title="oz Silver per oz Gold",
             )
-            st.plotly_chart(fig_gsr, width="stretch")
+            st.plotly_chart(fig_gsr, use_container_width=True)
 
     with cg2:
         st.markdown('<div class="sec">GSR Signal Ladder</div>', unsafe_allow_html=True)
@@ -1441,7 +1444,7 @@ with T_GSR:
                        font=dict(size=12, color=w_col)),
             height=300, yaxis_title="Indexed (Start = 100)",
         )
-        st.plotly_chart(fig_rel, width="stretch")
+        st.plotly_chart(fig_rel, use_container_width=True)
 
 
 # ───────────────────────────────────────────────────────────
@@ -1607,7 +1610,7 @@ with T_TECH:
         for i in range(1, 5):
             fig_t.update_yaxes(gridcolor=GRID, zeroline=False, row=i, col=1,
                                 tickfont=dict(color=MUTED, size=9))
-        st.plotly_chart(fig_t, width="stretch")
+        st.plotly_chart(fig_t, use_container_width=True)
 
         # ── Signal summary table ─────────────────────────────
         st.markdown('<div class="sec">Technical Signal Summary</div>', unsafe_allow_html=True)
