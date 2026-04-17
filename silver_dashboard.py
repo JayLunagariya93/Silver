@@ -609,7 +609,7 @@ with T_OV:
                 xaxis_rangeslider_visible=False,
                 yaxis_title="$/oz", yaxis2_title="Volume",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
     with col_panel:
         st.markdown('<div class="sec">Signal Dashboard</div>', unsafe_allow_html=True)
@@ -720,7 +720,7 @@ with T_OV:
                 showlegend=True, 
                 bargap=0.4,
             )
-            st.plotly_chart(fig_corr, use_container_width=True)
+            st.plotly_chart(fig_corr, width="stretch")
 
 
 # ───────────────────────────────────────────────────────────
@@ -810,7 +810,7 @@ with T_CMX:
                            font=dict(size=12, color=SIL_GLOW)),
                 height=340, yaxis_title="₹/kg",
             )
-            st.plotly_chart(fig_mcx, use_container_width=True)
+            st.plotly_chart(fig_mcx, width="stretch")
 
     with col_b:
         if not inr.empty:
@@ -833,7 +833,7 @@ with T_CMX:
                            font=dict(size=12, color=SIL_GLOW)),
                 height=340, yaxis_title="INR per USD",
             )
-            st.plotly_chart(fig_inr, use_container_width=True)
+            st.plotly_chart(fig_inr, width="stretch")
 
     # Waterfall decomposition
     if not np.isnan(ag_px) and not np.isnan(inr_px):
@@ -861,7 +861,7 @@ with T_CMX:
                        font=dict(size=12, color=SIL_GLOW)),
             height=320, showlegend=False,
         )
-        st.plotly_chart(fig_wf, use_container_width=True)
+        st.plotly_chart(fig_wf, width="stretch")
 
     st.markdown(f"""
     <div class="insight">
@@ -905,7 +905,7 @@ with T_MAC:
         ))
         fig_g.update_layout(paper_bgcolor=BG_CARD, font={"color": TEXT},
                              height=260, margin=dict(l=20, r=20, t=50, b=10))
-        st.plotly_chart(fig_g, use_container_width=True)
+        st.plotly_chart(fig_g, width="stretch")
 
         st.markdown(f"""
         <div style="text-align:center;padding:.5rem;background:{BG_SURFACE};
@@ -978,7 +978,7 @@ with T_MAC:
                            font=dict(size=12, color=SIL_GLOW)),
                 height=330, yaxis_title="DXY",
             )
-            st.plotly_chart(fig_dxy, use_container_width=True)
+            st.plotly_chart(fig_dxy, width="stretch")
 
     with c2:
         if not tips.empty:
@@ -1009,7 +1009,7 @@ with T_MAC:
                            font=dict(size=12, color=SIL_GLOW)),
                 height=330, yaxis_title="Yield (%)",
             )
-            st.plotly_chart(fig_ry, use_container_width=True)
+            st.plotly_chart(fig_ry, width="stretch")
 
     c3, c4 = st.columns(2, gap="medium")
 
@@ -1032,7 +1032,7 @@ with T_MAC:
                            font=dict(size=12, color=SIL_GLOW)),
                 height=330, yaxis_title="Yield (%)",
             )
-            st.plotly_chart(fig_yd, use_container_width=True)
+            st.plotly_chart(fig_yd, width="stretch")
 
     with c4:
         # DXY vs Silver scatter — colour coded by date
@@ -1060,7 +1060,7 @@ with T_MAC:
                 height=330,
                 xaxis_title="DXY", yaxis_title="Silver ($/oz)",
             )
-            st.plotly_chart(fig_sc, use_container_width=True)
+            st.plotly_chart(fig_sc, width="stretch")
 
     # Real yield impact table
     ry_table = {
@@ -1073,7 +1073,7 @@ with T_MAC:
     }
     df_ry = pd.DataFrame(ry_table)
     st.markdown('<div class="sec" style="margin-top:.5rem;">Real Yield → Silver Signal Framework</div>', unsafe_allow_html=True)
-    st.dataframe(df_ry, use_container_width=True, hide_index=True)
+    st.dataframe(df_ry, width="stretch", hide_index=True)
 
 
 # ───────────────────────────────────────────────────────────
@@ -1125,7 +1125,7 @@ with T_FUN:
         fig_sd.update_yaxes(title_text="Million oz", gridcolor=GRID, zeroline=False, secondary_y=False)
         fig_sd.update_yaxes(title_text="Deficit (M oz)", gridcolor=GRID, zeroline=False,
                              showgrid=False, secondary_y=True)
-        st.plotly_chart(fig_sd, use_container_width=True)
+        st.plotly_chart(fig_sd, width="stretch")
 
     with c2:
         if not slv.empty:
@@ -1151,7 +1151,7 @@ with T_FUN:
             fig_slv.update_yaxes(title_text="Price ($)", gridcolor=GRID, zeroline=False, secondary_y=False)
             fig_slv.update_yaxes(title_text="Volume", gridcolor=GRID, zeroline=False,
                                   showgrid=False, secondary_y=True)
-            st.plotly_chart(fig_slv, use_container_width=True)
+            st.plotly_chart(fig_slv, width="stretch")
 
     c3, c4 = st.columns(2, gap="medium")
 
@@ -1180,7 +1180,7 @@ with T_FUN:
                        font=dict(size=12, color=SIL_GLOW)),
             height=360, showlegend=False,
         )
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, width="stretch")
 
     with c4:
         solar_y  = [2014, 2016, 2018, 2020, 2022, 2024, 2026]
@@ -1202,9 +1202,9 @@ with T_FUN:
             title=dict(text="Solar PV's Rising Share of Silver Industrial Demand (%)",
                        font=dict(size=12, color=SIL_GLOW)),
             height=360, yaxis_title="% of Industrial Demand",
-            xaxis_dtick=2,  # Fixed: Resolves Duplicate Kwargs collision
+            xaxis_dtick=2,
         )
-        st.plotly_chart(fig_sol, use_container_width=True)
+        st.plotly_chart(fig_sol, width="stretch")
 
     # Mine supply + drivers table
     c5, c6 = st.columns(2, gap="medium")
@@ -1233,7 +1233,7 @@ with T_FUN:
                        font=dict(size=12, color=SIL_GLOW)),
             height=320, xaxis_title="% Share",
         )
-        st.plotly_chart(fig_mine, use_container_width=True)
+        st.plotly_chart(fig_mine, width="stretch")
 
     with c6:
         drivers_df = pd.DataFrame({
@@ -1252,7 +1252,7 @@ with T_FUN:
 
         st.markdown('<div class="sec">Industrial Demand Growth Vectors</div>', unsafe_allow_html=True)
         styled = drivers_df.style.map(color_sig, subset=["Signal"])
-        st.dataframe(styled, use_container_width=True, hide_index=True)
+        st.dataframe(styled, width="stretch", hide_index=True)
 
         st.markdown(f"""
         <div class="insight" style="margin-top:.75rem;">
@@ -1361,7 +1361,7 @@ with T_GSR:
                            font=dict(size=13, color=SIL_GLOW)),
                 height=420, yaxis_title="oz Silver per oz Gold",
             )
-            st.plotly_chart(fig_gsr, use_container_width=True)
+            st.plotly_chart(fig_gsr, width="stretch")
 
     with cg2:
         st.markdown('<div class="sec">GSR Signal Ladder</div>', unsafe_allow_html=True)
@@ -1427,7 +1427,7 @@ with T_GSR:
                        font=dict(size=12, color=w_col)),
             height=300, yaxis_title="Indexed (Start = 100)",
         )
-        st.plotly_chart(fig_rel, use_container_width=True)
+        st.plotly_chart(fig_rel, width="stretch")
 
 
 # ───────────────────────────────────────────────────────────
@@ -1593,7 +1593,7 @@ with T_TECH:
         for i in range(1, 5):
             fig_t.update_yaxes(gridcolor=GRID, zeroline=False, row=i, col=1,
                                 tickfont=dict(color=MUTED, size=9))
-        st.plotly_chart(fig_t, use_container_width=True)
+        st.plotly_chart(fig_t, width="stretch")
 
         # ── Signal summary table ─────────────────────────────
         st.markdown('<div class="sec">Technical Signal Summary</div>', unsafe_allow_html=True)
