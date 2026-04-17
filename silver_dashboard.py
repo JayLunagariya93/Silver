@@ -18,6 +18,7 @@ import requests
 import io
 from datetime import datetime, timedelta
 import warnings
+from curl_cffi import requests as cffi_requests
 
 warnings.filterwarnings("ignore")
 
@@ -259,25 +260,19 @@ div[data-testid="metric-container"] {{
 @st.cache_data(ttl=300, show_spinner=False)
 def _yf(ticker, period="2y", interval="1d"):
     try:
-        session = requests.Session()
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        })
-        
-        df = yf.Ticker(ticker, session=session).history(period=period, interval=interval, auto_adjust=True)
+        # FIX: We let yfinance handle the session natively so it can use its new anti-blocking features
+        df = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=True)
         
         if df.empty:
-            st.warning(f"Yahoo Finance returned empty data for {ticker}. It may be blocking the cloud IP.")
+            st.warning(f"Yahoo Finance returned empty data for {ticker}.")
             return pd.DataFrame()
             
-        # Safely handle timezones to prevent Pandas TypeErrors
         if df.index.tz is not None:
             df.index = df.index.tz_convert(None)
             
         return df.dropna(subset=["Close"])
         
     except Exception as e:
-        # Print the exact error to the dashboard UI
         st.error(f"YF Crash ({ticker}): {str(e)}")
         return pd.DataFrame()
 
@@ -286,14 +281,14 @@ def _yf(ticker, period="2y", interval="1d"):
 def _fred(series_id):
     try:
         url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'text/csv,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        }
         
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status() 
+        # FIX: Use curl_cffi to impersonate a real Chrome browser and bypass the FRED firewall
+        response = cffi_requests.get(url, impersonate="chrome", timeout=15)
         
+        if response.status_code != 200:
+            st.warning(f"FRED blocked the request for {series_id}. Status: {response.status_code}")
+            return pd.DataFrame()
+            
         df = pd.read_csv(io.StringIO(response.text), parse_dates=["DATE"], index_col="DATE")
         df.columns = ["value"]
         df = df[df["value"] != "."].copy()
@@ -302,10 +297,9 @@ def _fred(series_id):
         return df.loc[df.index >= df.index[-1] - pd.DateOffset(years=2)]
         
     except Exception as e:
-        # Print the exact error to the dashboard UI
         st.error(f"FRED Crash ({series_id}): {str(e)}")
         return pd.DataFrame()
-
+          
 def _last(df, col="Close"):
     try:
         return float(df[col].dropna().iloc[-1])
