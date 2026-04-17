@@ -259,17 +259,26 @@ div[data-testid="metric-container"] {{
 @st.cache_data(ttl=300, show_spinner=False)
 def _yf(ticker, period="2y", interval="1d"):
     try:
-        # User-Agent header helps bypass bot blockers on cloud servers
         session = requests.Session()
         session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         })
         
         df = yf.Ticker(ticker, session=session).history(period=period, interval=interval, auto_adjust=True)
-        df.index = df.index.tz_localize(None)
+        
+        if df.empty:
+            st.warning(f"Yahoo Finance returned empty data for {ticker}. It may be blocking the cloud IP.")
+            return pd.DataFrame()
+            
+        # Safely handle timezones to prevent Pandas TypeErrors
+        if df.index.tz is not None:
+            df.index = df.index.tz_convert(None)
+            
         return df.dropna(subset=["Close"])
+        
     except Exception as e:
-        print(f"Error fetching Yahoo Finance data for {ticker}: {e}")
+        # Print the exact error to the dashboard UI
+        st.error(f"YF Crash ({ticker}): {str(e)}")
         return pd.DataFrame()
 
 
@@ -278,11 +287,11 @@ def _fred(series_id):
     try:
         url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/csv,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         }
         
-        # Adding timeout explicitly to requests to prevent permanent hanging
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status() 
         
         df = pd.read_csv(io.StringIO(response.text), parse_dates=["DATE"], index_col="DATE")
@@ -291,10 +300,11 @@ def _fred(series_id):
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
         df = df.dropna()
         return df.loc[df.index >= df.index[-1] - pd.DateOffset(years=2)]
+        
     except Exception as e:
-        print(f"Error fetching FRED data for {series_id}: {e}")
+        # Print the exact error to the dashboard UI
+        st.error(f"FRED Crash ({series_id}): {str(e)}")
         return pd.DataFrame()
-
 
 def _last(df, col="Close"):
     try:
