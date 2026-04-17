@@ -17,6 +17,7 @@ from plotly.subplots import make_subplots
 import requests
 from datetime import datetime, timedelta
 import warnings
+import io
 
 warnings.filterwarnings("ignore")
 
@@ -258,19 +259,33 @@ div[data-testid="metric-container"] {{
 @st.cache_data(ttl=300, show_spinner=False)
 def _yf(ticker, period="2y", interval="1d"):
     try:
-        df = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=True)
+        # Disguise the request as a normal Chrome browser
+        session = requests.Session()
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        })
+        
+        df = yf.Ticker(ticker, session=session).history(period=period, interval=interval, auto_adjust=True)
         df.index = df.index.tz_localize(None)
         return df.dropna(subset=["Close"])
     except Exception as e:
         print(f"Error fetching Yahoo Finance data for {ticker}: {e}")
         return pd.DataFrame()
 
-
 @st.cache_data(ttl=600, show_spinner=False)
 def _fred(series_id):
     try:
         url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
-        df = pd.read_csv(url, parse_dates=["DATE"], index_col="DATE")
+        # Disguise the request as a normal Chrome browser
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        
+        # Use requests to get the CSV text with the header, then feed it to Pandas
+        response = requests.get(url, headers=headers)
+        response.raise_for_status() 
+        
+        df = pd.read_csv(io.StringIO(response.text), parse_dates=["DATE"], index_col="DATE")
         df.columns = ["value"]
         df = df[df["value"] != "."].copy()
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
